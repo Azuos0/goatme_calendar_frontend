@@ -1,11 +1,14 @@
 <template>
-  <v-container>
+  <v-container class="mt-6">
     <v-row class="text-center">
       <v-col cols="12">
         <vue-cal
           locale="pt-br"
           class="container"
           :disable-views="['years', 'year']"
+          @view-change="updateCalendar"
+          @ready="updateCalendar"
+          :events="events"
           :editable-events="{
             title: false,
             drag: false,
@@ -42,13 +45,16 @@
                   <v-row>
                     <v-col cols="12">
                       <label class="ml-1 font-weight-medium">Evento</label>
-                      <v-text-field v-model="data.name" outlined></v-text-field>
+                      <v-text-field
+                        v-model="newEvent.name"
+                        outlined
+                      ></v-text-field>
                     </v-col>
 
                     <v-col class="mt-n8" cols="12">
                       <label class="ml-1 font-weight-medium">Descrição</label>
                       <v-textarea
-                        v-model="data.description"
+                        v-model="newEvent.description"
                         outlined
                       ></v-textarea>
                     </v-col>
@@ -61,7 +67,7 @@
                             ref="menu"
                             v-model="menu"
                             :close-on-content-click="false"
-                            :return-value.sync="data.startDate"
+                            :return-value.sync="newEvent.start_date"
                             transition="scale-transition"
                             offset-y
                             min-width="auto"
@@ -80,7 +86,7 @@
                             <v-date-picker
                               color="#48447f"
                               locale="pt-br"
-                              v-model="data.startDate"
+                              v-model="newEvent.start_date"
                               no-title
                               scrollable
                             >
@@ -91,7 +97,7 @@
                               <v-btn
                                 text
                                 color="primary"
-                                @click="$refs.menu.save(data.startDate)"
+                                @click="$refs.menu.save(newEvent.start_date)"
                               >
                                 OK
                               </v-btn>
@@ -106,7 +112,7 @@
                                 v-model="startMenu"
                                 :close-on-content-click="false"
                                 :nudge-right="40"
-                                :return-value.sync="data.startTime"
+                                :return-value.sync="newEvent.start_time"
                                 transition="scale-transition"
                                 offset-y
                                 max-width="290px"
@@ -117,7 +123,7 @@
                                     Inicio:
                                   </label>
                                   <v-text-field
-                                    v-model="data.startTime"
+                                    v-model="newEvent.start_time"
                                     outlined
                                     readonly
                                     v-bind="attrs"
@@ -128,11 +134,11 @@
                                   v-if="startMenu"
                                   color="#48447f"
                                   format="24hr"
-                                  v-model="data.startTime"
-                                  :max="data.endTime"
+                                  v-model="newEvent.start_time"
+                                  :max="newEvent.end_time"
                                   full-width
                                   @click:minute="
-                                    $refs.startMenu.save(data.startTime)
+                                    $refs.startMenu.save(newEvent.start_time)
                                   "
                                 ></v-time-picker>
                               </v-menu>
@@ -143,7 +149,7 @@
                                 v-model="endMenu"
                                 :close-on-content-click="false"
                                 :nudge-right="40"
-                                :return-value.sync="data.endTime"
+                                :return-value.sync="newEvent.end_time"
                                 transition="scale-transition"
                                 offset-y
                                 max-width="290px"
@@ -154,7 +160,7 @@
                                     >Fim:</label
                                   >
                                   <v-text-field
-                                    v-model="data.endTime"
+                                    v-model="newEvent.end_time"
                                     outlined
                                     readonly
                                     v-bind="attrs"
@@ -165,11 +171,11 @@
                                   v-if="endMenu"
                                   format="24hr"
                                   color="#48447f"
-                                  v-model="data.endTime"
-                                  :min="data.startTime"
+                                  v-model="newEvent.end_time"
+                                  :min="newEvent.start_time"
                                   full-width
                                   @click:minute="
-                                    $refs.endMenu.save(data.endTime)
+                                    $refs.endMenu.save(newEvent.end_time)
                                   "
                                 ></v-time-picker>
                               </v-menu>
@@ -214,6 +220,11 @@
 </template>
 
 <script>
+import { mapActions, mapGetters, mapMutations } from 'vuex';
+import {
+  lastDayOfActivity,
+  getMonthIntervalFromDate,
+} from '../utils/dateHelper';
 import VueCal from 'vue-cal';
 import 'vue-cal/dist/vuecal.css';
 import 'vue-cal/dist/i18n/pt-br.js';
@@ -228,34 +239,97 @@ export default {
     endMenu: false,
     repeat: false,
     weeks: 0,
-    data: {
+    newEvent: {
       name: '',
       description: '',
-      startTime: null,
-      endTime: null,
-      startDate: '',
-      endDate: null,
+      start_time: null,
+      end_time: null,
+      start_date: '',
+      end_date: null,
+      weekday: null,
     },
   }),
+  created() {
+    const today = new Date();
+    const interval = getMonthIntervalFromDate(today);
+
+    this.SET_CURRENT_MONTH(today.getMonth());
+    this.SET_CURRENT_YEAR(today.getFullYear());
+    this.SET_CURRENT_DATE_INTERVAL(interval);
+
+    this.fetchActivities(interval);
+  },
   computed: {
+    ...mapGetters({
+      events: 'getActivities',
+      getCurrentMonth: 'getCurrentMonth',
+      getCurrentYear: 'getCurrentYear',
+    }),
     brDateText() {
-      return this.data.startDate
+      return this.newEvent.start_date
         .split('-')
         .reverse()
         .join('/');
     },
   },
   methods: {
-    save() {
-      const temp = this.data.startDate.split('-');
-      const date = new Date(temp[0], temp[1] - 1, temp[2]);
-      console.log('atual: ', date);
-      const newDateInMillis = date.getTime() +  1000 * 60 * 60 * 24 * 7 * this.weeks; 
-      console.log('Daqui a 8 dias: ', new Date(newDateInMillis));
-    },
-    calculateEndDate(){
+    ...mapActions({
+      addActivity: 'addActivity',
+      fetchActivities: 'fetchActivities',
+    }),
+    ...mapMutations({
+      SET_CURRENT_MONTH: 'SET_CURRENT_MONTH',
+      SET_CURRENT_YEAR: 'SET_CURRENT_YEAR',
+      SET_CURRENT_DATE_INTERVAL: 'SET_CURRENT_DATE_INTERVAL',
+    }),
+    async save() {
+      //calculate last date
+      this.newEvent.start_date
+        ? (this.newEvent.end_date = lastDayOfActivity(
+            this.newEvent.start_date,
+            this.weeks
+          ))
+        : null;
 
-    }
+      //get in what weekday the event was created (monday, tuesday, ...)
+      let weekdayHandler = this.newEvent.start_date.split('-');
+      this.newEvent.weekday = new Date(
+        weekdayHandler[0],
+        weekdayHandler[1] - 1,
+        weekdayHandler[2]
+      ).getDay();
+
+      await this.addActivity(this.newEvent);
+      this.dialog = false;
+    },
+    //responsible to bring new events to calendar when the calendar's view change
+    updateCalendar(event) {
+      //verify if the month has changed
+      const monthChanged = event.startDate.getMonth() !== this.getCurrentMonth;
+      
+      //get calendar's view date interval. 
+      //In case of a view of type week, it uses the first and last day 
+      //of the week and gets the month interval which each day belongs  
+      const intervalStart = getMonthIntervalFromDate(event.startDate);
+      const intervalEnd = getMonthIntervalFromDate(event.endDate);
+      
+      this.SET_CURRENT_DATE_INTERVAL([intervalStart[0], intervalEnd[1]]);
+      
+      //case when week is between to months
+      if (event.startDate.getMonth() !== event.endDate.getMonth()) {
+        this.SET_CURRENT_MONTH(event.startDate.getMonth());
+        this.SET_CURRENT_YEAR(event.startDate.getFullYear());
+        
+        //fetch the events of both months
+        this.fetchActivities([intervalStart[0], intervalEnd[1]]);
+      } else {
+        if ((event.view !== 'month' && !monthChanged) || !monthChanged) return;
+
+        this.SET_CURRENT_MONTH(event.startDate.getMonth());
+        this.SET_CURRENT_YEAR(event.startDate.getFullYear());
+        this.fetchActivities(intervalStart);
+      }
+    },
   },
 };
 </script>
